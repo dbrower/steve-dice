@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 import random
+import math
 
 # 6=two successes
 # 5=one success
@@ -45,7 +46,9 @@ class State:
             if 0 in self.dice:
                 self.dice[self.dice.index(0)] = -1
 
-    def reroll(self):
+    def reroll(self, strat_f):
+        if not strat_f:
+            strat_f = self.find_matching
         # the set of indicies that are being rerolled
         reroll_choices = []
         # dice which have been added are marked as -1
@@ -53,10 +56,13 @@ class State:
         reroll_choices.extend(num_negone)
         # now reroll any active 3s
         for i in self.active_three:
-            n = self.find_matching_strategy_four([i] + reroll_choices)
+            n = strat_f([i] + reroll_choices)
             if n > -1:
                 reroll_choices.append(i)
                 reroll_choices.append(n)
+            elif n == -1:
+                # just reroll the 3 with no matching die
+                reroll_choices.append(i)
         #print "Reroll {}".format(reroll_choices)
         self.active_three = []
         for i in reroll_choices:
@@ -71,6 +77,10 @@ class State:
     def find_all(self, n):
         return [i for i in range(len(self.dice)) if self.dice[i] == n]
 
+    # returns:
+    #  >= 0 = index of other die to reroll
+    #  -1   = no matching die, just reroll the 3
+    #  -2   = don't reroll the 3
     def find_matching(self, reroll_choices):
         # we choose to reroll dice in the following order:
         #  first any 1s
@@ -96,12 +106,12 @@ class State:
         #  then any 2s
         #  then any 4s
         if self.eval() >= 3:
-            return -1
+            return -2
         return self.find_matching(reroll_choices)
 
     def find_matching_strategy_four(self, reroll_choices):
         if self.eval() >= 4:
-            return -1
+            return -2
         return self.find_matching(reroll_choices)
 
 
@@ -110,14 +120,19 @@ def histo(lst,n):
     counts = {}
     nn = float(n)
     for i in lst:
-        if i in counts:
-            counts[i] += 1
-        else:
-            counts[i] = 1
+        counts[i] = counts.get(i, 0) + 1
     ks = counts.keys()
     ks.sort()
     for k in ks:
         print "%8d %8d %8f" % (k, counts[k], counts[k]/nn)
+
+def mean_stddev(lst):
+    n = len(lst)
+    s = sum(lst)
+    m = float(s)/n
+    ss = sum(( (x-m)**2 for x in lst))
+    v = float(ss)/(n-1)
+    return m, v
 
 def stats(n, ndice):
     outcomes = []
@@ -126,17 +141,26 @@ def stats(n, ndice):
     for i in range(n):
         roll_count = 1
         dice.roll(ndice)
-        while dice.reroll():
+        while dice.reroll(dice.find_matching):
             roll_count += 1
 
         num_rolls.append(roll_count)
         outcomes.append(dice.eval())
 
-    print "outcomes"
+    #     "-------- -------- --------"
+    print ndice,"Dice, n=",n,"trials"
+    print "outcome  count    prob"
     histo(outcomes, n)
-    print "rolls"
+    m, v = mean_stddev(outcomes)
+    # compute sample error
+    print "expected return", m, 2*math.sqrt(v/n)
+    print "expected std dev", v
+    print "rolls    count    prob"
     histo(num_rolls, n)
-    print "avg rolls", float(sum(num_rolls))/n
+    m, v = mean_stddev(num_rolls)
+    print "avg rolls", m, 2*math.sqrt(v/n)
+    print "expected variance", v
 
 
-stats(10000, 4)
+for d in range(2,7):
+    stats(100000, d)
