@@ -23,6 +23,7 @@ def eval_die(n):
 class State:
     def __init__(self):
         self.dice = [0]*7
+        self.active_two = []
         self.active_three = []
 
     def __str__(self):
@@ -34,42 +35,43 @@ class State:
     def roll(self, n):
         # roll the first n dice
         self.dice = [0]*7
+        self.active_two = []
         self.active_three = []
-        num_twos = 0
         for i in range(n):
             self.dice[i] = random.randint(1,6)
             if self.dice[i] == 2:
-                num_twos += 1
+                self.active_two.append(i)
             elif self.dice[i] == 3:
                 self.active_three.append(i)
-        for n in range(num_twos):
-            if 0 in self.dice:
-                self.dice[self.dice.index(0)] = -1
 
     def reroll(self, strat_f):
         if not strat_f:
             strat_f = self.find_matching
         # the set of indicies that are being rerolled
         reroll_choices = []
-        # dice which have been added are marked as -1
-        num_negone = self.find_all(-1)
-        reroll_choices.extend(num_negone)
+        # figure out rerolls
+        for i in self.active_two:
+            if 0 in self.dice and strat_f([], 1) >= 0:
+                j = self.dice.index(0)
+                self.dice[j] = -1
+                reroll_choices.append(j)
         # now reroll any active 3s
         for i in self.active_three:
-            n = strat_f([i] + reroll_choices)
+            n = strat_f([i] + reroll_choices, 0)
             if n > -1:
                 reroll_choices.append(i)
                 reroll_choices.append(n)
             elif n == -1:
                 # just reroll the 3 with no matching die
                 reroll_choices.append(i)
+        #print "---> {} = {}".format(self.dice, self.eval())
         #print "Reroll {}".format(reroll_choices)
+        self.active_two = []
         self.active_three = []
         for i in reroll_choices:
             self.dice[i] = random.randint(1,6)
             if self.dice[i] == 2:
-                if 0 in self.dice:
-                    self.dice[self.dice.index(0)] = -1
+                self.active_two.append(i)
             elif self.dice[i] == 3:
                 self.active_three.append(i)
         return len(reroll_choices) > 0
@@ -81,7 +83,12 @@ class State:
     #  >= 0 = index of other die to reroll
     #  -1   = no matching die, just reroll the 3
     #  -2   = don't reroll the 3
-    def find_matching(self, reroll_choices):
+    def find_matching(self, reroll_choices, switch):
+        # switch is a hack...if 1 it means decide whether
+        # to reroll a 2. 0 = yes, <0 = no
+        if switch == 1:
+            # always add more dice
+            return 0
         # we choose to reroll dice in the following order:
         #  first any 1s
         #  then any 2s
@@ -98,7 +105,7 @@ class State:
                 return i
         return -1
 
-    def find_matching_strategy_three(self, reroll_choices):
+    def find_matching_strategy_three(self, reroll_choices, switch):
         # find a reroll die in the following order:
         #  if the value of the dice is >= 3 then don't do anything
         # otherwise,
@@ -107,12 +114,12 @@ class State:
         #  then any 4s
         if self.eval() >= 3:
             return -2
-        return self.find_matching(reroll_choices)
+        return self.find_matching(reroll_choices, switch)
 
-    def find_matching_strategy_four(self, reroll_choices):
+    def find_matching_strategy_four(self, reroll_choices, switch):
         if self.eval() >= 4:
             return -2
-        return self.find_matching(reroll_choices)
+        return self.find_matching(reroll_choices, switch)
 
 
 
@@ -141,7 +148,7 @@ def stats(n, ndice):
     for i in range(n):
         roll_count = 1
         dice.roll(ndice)
-        while dice.reroll(dice.find_matching):
+        while dice.reroll(dice.find_matching_strategy_three):
             roll_count += 1
 
         num_rolls.append(roll_count)
@@ -160,7 +167,6 @@ def stats(n, ndice):
     m, v = mean_stddev(num_rolls)
     print "avg rolls", m, 2*math.sqrt(v/n)
     print "expected variance", v
-
 
 for d in range(2,7):
     stats(100000, d)
